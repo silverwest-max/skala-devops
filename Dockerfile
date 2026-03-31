@@ -1,13 +1,5 @@
-from node:20-alpine
+from nginx:alpine
 
-workdir /app
+copy index.html /usr/share/nginx/html/index.html
 
-copy package.json ./
-run npm install
-
-copy src ./src
-copy dist ./dist
-
-expose 3000
-
-cmd ["node", "dist/server.js"]
+expose 80

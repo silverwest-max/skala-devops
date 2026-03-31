@@ -5,7 +5,7 @@ pipeline {
         app_name = 'skala-devops'
 
         harbor_url = 'amdp-registry.skala-ai.com'
-        harbor_project = 'demo'
+        harbor_project = 'skala26a-ai2'
         image_tag = "${BUILD_NUMBER}"
         full_image_name = "${harbor_url}/${harbor_project}/${app_name}:${image_tag}"
     }
@@ -14,24 +14,6 @@ pipeline {
         stage('checkout') {
             steps {
                 checkout scm
-            }
-        }
-
-        stage('install') {
-            steps {
-                sh 'npm install'
-            }
-        }
-
-        stage('test') {
-            steps {
-                sh 'npm test'
-            }
-        }
-
-        stage('build') {
-            steps {
-                sh 'npm run build'
             }
         }
 
