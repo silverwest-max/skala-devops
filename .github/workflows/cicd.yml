@@ -17,7 +17,7 @@ env:
   HARBOR_PULL_SECRET: harbor-registry-secret
   AWS_REGION: ap-northeast-2
   EKS_CLUSTER_NAME: skala-2025
-  K8S_NAMESPACE: default
+  K8S_NAMESPACE: class-2
 
 jobs:
   build-and-deploy:
