@@ -61,7 +61,7 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh '''
-                    docker build \
+                    docker build --platform linux/amd64 \
                       -t ${FULL_IMAGE} \
                       -t ${LATEST_IMAGE} \
                       .
@@ -94,15 +94,15 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     sh '''
-                        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-                        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-                        export AWS_DEFAULT_REGION=${AWS_REGION}
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                        export AWS_DEFAULT_REGION="${AWS_REGION}"
 
                         aws sts get-caller-identity
 
                         aws eks update-kubeconfig \
-                          --region ${AWS_REGION} \
-                          --name ${EKS_CLUSTER_NAME}
+                          --region "${AWS_REGION}" \
+                          --name "${EKS_CLUSTER_NAME}"
 
                         kubectl config current-context
                     '''
@@ -125,15 +125,15 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-                        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-                        export AWS_DEFAULT_REGION=${AWS_REGION}
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                        export AWS_DEFAULT_REGION="${AWS_REGION}"
 
                         kubectl create secret docker-registry ${HARBOR_PULL_SECRET} \
-                          --docker-server=${HARBOR_REGISTRY} \
+                          --docker-server="${HARBOR_REGISTRY}" \
                           --docker-username="${HARBOR_USER}" \
                           --docker-password="${HARBOR_PASS}" \
-                          --dry-run=client -o yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
+                          --dry-run=client -o yaml | kubectl apply -n "${K8S_NAMESPACE}" -f -
                     '''
                 }
             }
@@ -147,19 +147,19 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     sh '''
-                        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-                        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-                        export AWS_DEFAULT_REGION=${AWS_REGION}
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                        export AWS_DEFAULT_REGION="${AWS_REGION}"
 
                         cp deploy/deployment.yaml deploy/deployment-rendered.yaml
                         sed -i.bak "s|__IMAGE__|${FULL_IMAGE}|g" deploy/deployment-rendered.yaml
                         rm -f deploy/deployment-rendered.yaml.bak
 
-                        kubectl apply -n ${K8S_NAMESPACE} -f deploy/deployment-rendered.yaml
-                        kubectl apply -n ${K8S_NAMESPACE} -f deploy/service.yaml
+                        kubectl apply -n "${K8S_NAMESPACE}" -f deploy/deployment-rendered.yaml
+                        kubectl apply -n "${K8S_NAMESPACE}" -f deploy/service.yaml
 
-                        kubectl rollout status deployment/${APP_NAME} -n ${K8S_NAMESPACE} --timeout=300s
-                        kubectl get pods -n ${K8S_NAMESPACE}
+                        kubectl rollout status deployment/${APP_NAME} -n "${K8S_NAMESPACE}" --timeout=300s
+                        kubectl get pods -n "${K8S_NAMESPACE}" -o wide
                     '''
                 }
             }
