@@ -1,0 +1,69 @@
+pipeline {
+    agent any
+
+    environment {
+        git_repo = 'https://github.com/silverwest-max/skala-devops.git'
+        git_branch = 'main'
+
+        app_name = 'skala-devops'
+        harbor_url = 'amdp-registry.skala-ai.com'
+        harbor_project = 'skala26a-ai2'
+
+        image_tag = "${BUILD_NUMBER}"
+        full_image_name = "${harbor_url}/${harbor_project}/${app_name}:${image_tag}"
+        latest_image_name = "${harbor_url}/${harbor_project}/${app_name}:latest"
+    }
+
+    stages {
+        stage('checkout') {
+            steps {
+                git branch: "${git_branch}", url: "${git_repo}"
+            }
+        }
+
+        stage('docker build') {
+            steps {
+                sh '''
+                docker build -t ${full_image_name} .
+                docker tag ${full_image_name} ${latest_image_name}
+                '''
+            }
+        }
+
+        stage('push to harbor') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'harbor-creds',
+                    usernameVariable: 'harbor_user',
+                    passwordVariable: 'harbor_pass'
+                )]) {
+                    sh '''
+                    echo "$harbor_pass" | docker login $harbor_url -u "$harbor_user" --password-stdin
+                    docker push ${full_image_name}
+                    docker push ${latest_image_name}
+                    '''
+                }
+            }
+        }
+
+        stage('deploy') {
+            steps {
+                sh '''
+                docker pull ${latest_image_name}
+                docker stop skala-devops || true
+                docker rm skala-devops || true
+                docker run -d --name skala-devops -p 8081:80 ${latest_image_name}
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'pipeline success'
+        }
+        failure {
+            echo 'pipeline failed'
+        }
+    }
+}
