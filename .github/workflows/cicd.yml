@@ -1,0 +1,123 @@
+name: CI-CD to Harbor and EKS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: skala-devops-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: skala-devops
+  HARBOR_REGISTRY: amdp-registry.skala-ai.com
+  HARBOR_PROJECT: skala26a-ai2
+  HARBOR_PULL_SECRET: harbor-registry-secret
+  AWS_REGION: ap-northeast-2
+  EKS_CLUSTER_NAME: skala-2025
+  K8S_NAMESPACE: default
+
+jobs:
+  build-and-deploy:
+    # If the EKS endpoint is private-only, switch to a self-hosted runner in the same network.
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set image variables
+        id: vars
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          IMAGE_REPO="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${APP_NAME}"
+          IMAGE_TAG="${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          FULL_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
+          LATEST_IMAGE="${IMAGE_REPO}:latest"
+
+          {
+            echo "image_repo=${IMAGE_REPO}"
+            echo "image_tag=${IMAGE_TAG}"
+            echo "full_image=${FULL_IMAGE}"
+            echo "latest_image=${LATEST_IMAGE}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "IMAGE_REPO=${IMAGE_REPO}"
+            echo "IMAGE_TAG=${IMAGE_TAG}"
+            echo "FULL_IMAGE=${FULL_IMAGE}"
+            echo "LATEST_IMAGE=${LATEST_IMAGE}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Validate static app files
+        run: |
+          test -f index.html
+          test -f Dockerfile
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.full_image }}
+            ${{ steps.vars.outputs.latest_image }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        run: |
+          KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Configure kubeconfig
+        run: |
+          aws sts get-caller-identity
+          aws eks update-kubeconfig \
+            --region "${AWS_REGION}" \
+            --name "${EKS_CLUSTER_NAME}"
+          kubectl config current-context
+
+      - name: Ensure namespace and Harbor pull secret
+        run: |
+          kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret docker-registry "${HARBOR_PULL_SECRET}" \
+            --docker-server="${HARBOR_REGISTRY}" \
+            --docker-username="${{ secrets.HARBOR_USERNAME }}" \
+            --docker-password="${{ secrets.HARBOR_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -n "${K8S_NAMESPACE}" -f -
+
+      - name: Deploy to EKS
+        run: |
+          sed "s|__IMAGE__|${FULL_IMAGE}|g" deploy/deployment.yaml > /tmp/deployment-rendered.yaml
+
+          kubectl apply -n "${K8S_NAMESPACE}" -f /tmp/deployment-rendered.yaml
+          kubectl apply -n "${K8S_NAMESPACE}" -f deploy/service.yaml
+
+          kubectl rollout status deployment/"${APP_NAME}" -n "${K8S_NAMESPACE}" --timeout=300s
+          kubectl get pods -n "${K8S_NAMESPACE}" -o wide
